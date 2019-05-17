@@ -3,3 +3,4 @@
 
 # dont check in temporary files
 __pycache__
+*.egg-info
