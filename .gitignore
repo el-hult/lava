@@ -1,6 +1,6 @@
-# check in configurations for PyCharm (contains test runners for example)
+# configurations for PyCharm
 .idea/
 
-# dont check in temporary files
+# temporary files
 __pycache__
 *.egg-info
