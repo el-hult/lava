@@ -1,5 +1,5 @@
 # check in configurations for PyCharm (contains test runners for example)
-# .idea/
+.idea/
 
 # dont check in temporary files
 __pycache__
