@@ -1,7 +1,8 @@
 import numpy as np
 
+
 class LavaBase:
-    def __init__(self, nominal_model=None, latent_model=None):
+    def __init__(self, nominal_model, latent_model):
         """ A Latent Variable estimator object
 
         This model contains methods for training and predicting using the LAVA method.
@@ -15,6 +16,8 @@ class LavaBase:
         self.latent_model = latent_model
         self.nominal_model = nominal_model
 
+
+
     def step(self, y, u):
         """ Perform one step of learning
 
@@ -26,8 +29,18 @@ class LavaBase:
             self.u_history = u
             self.y_history = y
         else:
-            self.u_history = np.column_stack([self.u_history, u])
-            self.y_history = np.column_stack([self.y_history, y])
+            self.u_history = np.column_stack([u, self.u_history])
+            self.y_history = np.column_stack([y, self.y_history])
+
+        phi = self.nominal_model.get_regressor_stepwise(y, u)
+        gamma = self.latent_model.get_regressor_stepwise(y, u)
+
+        regressor_model_needs_more_data = phi is None or gamma is None
+        if regressor_model_needs_more_data:
+            return False
+
+        # The model has provided some estimate
+        return True
 
 
 class RegressorModel:
@@ -67,11 +80,11 @@ class InterceptRegressor(RegressorModel):
 
 class ARXRegressor(RegressorModel):
 
-    def __init__(self, y_lags, u_lags):
+    def __init__(self, y_lag_order, u_lag_order):
         """ Produce a AR model with lagged inputs, outputs, and an intercept"""
         super().__init__()
-        self.y_lags = y_lags
-        self.u_lags = u_lags
+        self.y_lags = y_lag_order
+        self.u_lags = u_lag_order
 
         # Below values will be set by first seen data
         self._first_run = True
