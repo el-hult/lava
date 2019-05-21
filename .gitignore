@@ -1,6 +1,6 @@
 # configurations for PyCharm
 .idea/
 
-# temporary files
+# temporary python files
 __pycache__
 *.egg-info
