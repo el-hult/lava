@@ -17,7 +17,7 @@ class TestARXRegressor(TestCase):
 
         arx_regressor = lava.ARXRegressor(y_lag_max=1, u_lag_max=1)
         intercept_regressor = lava.InterceptRegressor()
-        lb = lava.LavaBase(nominal_model=arx_regressor, latent_model=intercept_regressor)
+        lb = lava.Lava(nominal_model=arx_regressor, latent_model=intercept_regressor)
 
         # setup system matrices
         A = np.array([[.9, .2], [-.2, .9]])

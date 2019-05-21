@@ -6,7 +6,7 @@ import numpy as np
 
 
 # noinspection PyPep8Naming
-class LavaBase:
+class Lava:
     def __init__(self, nominal_model, latent_model):
         """ A Latent Variable estimator object
 
@@ -76,17 +76,19 @@ class LavaBase:
         * Update matrix of parameters for latent variable model :math:`Z`
         """
         if self.y_history is None or self.u_history is None:
-            self.u_history = u
-            self.y_history = y
+            self.u_history = u[:,np.newaxis]
+            self.y_history = y[:,np.newaxis]
         else:
             self.u_history = np.column_stack([u, self.u_history])
             self.y_history = np.column_stack([y, self.y_history])
 
-        phi = self.nominal_model.update_regressor_stepwise(y, u)
-        gamma = self.latent_model.update_regressor_stepwise(y, u)
+        phi = self.nominal_model.current_regressor
+        gamma = self.latent_model.current_regressor
 
         regressor_model_needs_more_data = phi is None or gamma is None
         if regressor_model_needs_more_data:
+            self.nominal_model.update_regressor_stepwise(y, u)
+            self.latent_model.update_regressor_stepwise(y, u)
             return False
 
         n_y = y.size
@@ -96,7 +98,7 @@ class LavaBase:
         if self._steps_taken is None:
             self.initialize_identification_parameters(n_phi, n_gamma, n_y)
 
-        Z_brows = self.Z
+        Z_check = self.Z
 
         # 2. Update P, \bar \Theta, H
         self.P -= (self.P @ np.outer(phi, phi) @ self.P) / (
@@ -145,8 +147,8 @@ class LavaBase:
 
             for k in range(n_recursive_rounds):
                 for j in range(n_gamma):
-                    alpha = eta + T[j, j] * Z_brows[i, j] ** 2 + 2 * zeta[j] * Z_brows[i, j]
-                    g = zeta[j] + T[j, j] * Z_brows[i, j]
+                    alpha = eta + T[j, j] * Z_check[i, j] ** 2 + 2 * zeta[j] * Z_check[i, j]
+                    g = zeta[j] + T[j, j] * Z_check[i, j]
                     beta = T[j, j]
                     w = np.sqrt(self.Psi_gamma_gamma[j, j] / self._steps_taken)
 
@@ -162,15 +164,63 @@ class LavaBase:
                     else:
                         z_hat_ij = 0
 
-                    z_diff = Z_brows[i, j] - z_hat_ij
+                    z_diff = Z_check[i, j] - z_hat_ij
                     eta += T[j, j] * z_diff ** 2 + 2 * z_diff * zeta[j]
                     zeta += T[:, j] * z_diff
-                    Z_brows[i, j] = z_hat_ij
+                    Z_check[i, j] = z_hat_ij
 
         self.Theta = self.Theta_bar - self.Z @ self.H.T
-        self.Z = Z_brows
+        self.Z = Z_check
+
+        self.nominal_model.update_regressor_stepwise(y, u)
+        self.latent_model.update_regressor_stepwise(y, u)
 
         return self.Theta, self.Z
+
+    def simulate(self, u):
+        """Simulates the system for the duration of the input vector.
+
+        Do note that since latent and nominal models may rely on historical data, this method assumes that the
+        estimation starts where the training stopped.
+
+        Args:
+            u (ndarray): an array of inputs
+
+        """
+        n_time_steps = u.shape[1] if len(u.shape) == 2 else u.size
+        n_output_dimension = self.Theta.shape[0]
+        y_hat = np.zeros((n_output_dimension, n_time_steps))
+        Theta_phi = np.zeros((n_output_dimension, n_time_steps))
+        Z_gamma = np.zeros((n_output_dimension, n_time_steps))
+
+        # first prediction is made on the last training sample!
+        phi = self.nominal_model.current_regressor
+        gamma = self.latent_model.current_regressor
+
+        Theta_phi_f = self.Theta @ phi
+        Z_gamma_f = self.Z @ gamma
+        y_hat_f = Theta_phi_f + Z_gamma_f
+
+        y_hat[:, 0] = y_hat_f
+        Theta_phi[:, 0] = Theta_phi_f
+        Z_gamma[:, 0] = Z_gamma_f
+
+        for t in range(0, n_time_steps-1):
+            u_now = u[..., t]
+            y_now = y_hat[..., t]
+            phi = self.nominal_model.update_regressor_stepwise(y=y_now, u=u_now)
+            gamma = self.latent_model.update_regressor_stepwise(y=y_now, u=u_now)
+
+            Theta_phi_f = self.Theta @ phi
+            Z_gamma_f = self.Z @ gamma
+            y_hat_f = Theta_phi_f + Z_gamma_f
+
+            # update forecast
+            y_hat[:, t+1] = y_hat_f
+            Theta_phi[:, t+1] = Theta_phi_f
+            Z_gamma[:, t+1] = Z_gamma_f
+
+        return y_hat, Theta_phi, Z_gamma
 
 
 class RegressorModel:
@@ -181,6 +231,7 @@ class RegressorModel:
 
         """
         self.current_regressor = None
+        """np.ndarray: The current state of the RegressorModel."""
 
     def update_regressor(self, y_history, u_history, nominal_regressor=None):
         """ Get a regressor vector based on historical observations
@@ -215,12 +266,18 @@ class ARXRegressor(RegressorModel):
         """ Produce a AR model with lagged inputs, outputs, and an intercept
 
         The model is
-            y(t) = SUM(A(k)*y(t-k)) + SUM(B(l)*u(t-l))
-        where k ranges from y_lag_min to y_lag_max nad l ranges similarly
+            y(t+1) = SUM(A(k)*y(t-k)) + SUM(B(l)*u(t-l))
+        where k ranges from y_lag_min to y_lag_max and l ranges similarly
 
         Example:
             arx = ARXRegressor(1,1)
-            produces a AR(1) model in both signal and input
+            produces a AR(1) model in both signal and input like
+            y(t) = A(1)*y(t-1) + B(1)*u(t-1)
+
+            arx = ARXRegressor(3,2,1,2)
+            produces a AR(1) model in both signal and input like
+            y(t) = A(1)*y(t-1) + A(2)*y(t-2)
+                  +A(3)*y(t-3) + B(2)*u(t-2)
 
         Args:
             y_lag_max: the most lagged order of output
@@ -230,6 +287,7 @@ class ARXRegressor(RegressorModel):
 
         """
         super().__init__()
+        assert y_lag_min >= 1 and u_lag_min >= 1 # lag 0 cannot be used in predictions
         self.y_lag_max = y_lag_max
         self.u_lag_max = u_lag_max
         self.y_lag_min = y_lag_min
@@ -237,12 +295,10 @@ class ARXRegressor(RegressorModel):
 
         # Below values will be set by first seen data
         self._first_run = True
-        self._n_y = None
-        self._n_u = None
         self._us = None
         self._ys = None
 
-    def update_regressor(self, y_history, u_history, nominal_regressor=None) -> np.ndarray:
+    def update_regressor(self, y_history, u_history, nominal_regressor=None):
         """Produce the whole regressor-vector based on a sufficient history of observations
 
         Updates and returns the self.current_regressor variable.
@@ -258,24 +314,22 @@ class ARXRegressor(RegressorModel):
         1D-array. The k1,k2,l1,l2 are the min and max lags for input and output respectively.
         """
 
-        if y_history.shape[1] - 1 < self.y_lag_max:
+        if y_history.shape[1] < self.y_lag_max:
             raise ValueError(f"Not enough history presented. Y needs {self.y_lag_max} records - "
                              f"only {y_history.shape[1]} were presented.")
 
-        if u_history.shape[1] - 1 < self.u_lag_max:
+        if u_history.shape[1] < self.u_lag_max:
             raise ValueError(f"Not enough history presented. U needs {self.u_lag_max} records - "
                              f"only {u_history.shape[1]} were presented.")
 
-        self._ys = y_history[:, 0:self.y_lag_max + 1]
-        self._us = u_history[:, 0:self.u_lag_max + 1]
+        self._ys = y_history[:, 0:self.y_lag_max]
+        self._us = u_history[:, 0:self.u_lag_max]
 
         if self._first_run:
             self._first_run = False
-            self._n_u = u_history.shape[0]
-            self._n_y = y_history.shape[0]
 
         self.current_regressor = np.concatenate(
-            [self._ys[:, self.y_lag_min:].flatten('F'), self._us[:, self.u_lag_min:].flatten('F'), np.ones(1)],
+            [self._ys[:, self.y_lag_min-1:].flatten('F'), self._us[:, self.u_lag_min-1:].flatten('F'), np.ones(1)],
             axis=0)
 
         return self.current_regressor
@@ -286,10 +340,10 @@ class ARXRegressor(RegressorModel):
         Updates and returns the self.current_regressor variable.
 
         Args:
-            y (ndarray): The historical outputs. Columns of old observations. y = [y(t-1) y(t-2) ... ]
-            u (ndarray): The historical inputs. Columns of old observations. u = [u(t-1) u(t-2) ...]
-            nominal_regressor (ndarray): The current value of the nominal regressor vector. Not used in this regressor
-             model, but is required by the interface
+            y (ndarray): Output from last timestep y(t-1)
+            u (ndarray): Input in last timestep u(t-1)
+            nominal_regressor (ndarray): The current value of the nominal regressor vector. phi(t)
+             Not used in this regressor model, but is required by the interface
 
         Returns:
             None if too few observations are seen, otherwise a regression vector.
@@ -297,27 +351,24 @@ class ARXRegressor(RegressorModel):
         """
         if self._first_run:
             self._first_run = False
-            self._n_u = u.size
-            self._n_y = y.size
             self._us = u[:, np.newaxis]
             self._ys = y[:, np.newaxis]
         else:
 
-            if self._ys.shape[1] <= self.y_lag_max:
+            if self._ys.shape[1]+1 <= self.y_lag_max:
                 self._ys = np.column_stack([y, self._ys])
             else:
                 self._ys = np.column_stack([y, self._ys[:, 0:-1]])
 
-            if self._us.shape[1] <= self.u_lag_max:
+            if self._us.shape[1]+1 <= self.u_lag_max:
                 self._us = np.column_stack([u, self._us])
             else:
                 self._us = np.column_stack([u, self._us[:, 0:-1]])
 
-        has_seen_enough_observations = self._us.shape[1] - 1 == self.u_lag_max and self._ys.shape[
-            1] - 1 == self.y_lag_max
+        has_seen_enough_observations = self._us.shape[1] == self.u_lag_max and self._ys.shape[1] == self.y_lag_max
         if has_seen_enough_observations:
             arx_vector = np.concatenate(
-                [self._ys[:, self.y_lag_min:].flatten('F'), self._us[:, self.y_lag_min:].flatten('F'), np.ones(1)],
+                [self._ys[:, self.y_lag_min-1:].flatten('F'), self._us[:, self.u_lag_min-1:].flatten('F'), np.ones(1)],
                 axis=0)
             self.current_regressor = arx_vector
         else:
