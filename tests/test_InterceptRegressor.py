@@ -14,14 +14,14 @@ class TestInterceptRegressor(TestCase):
         y_history = np.array([[1, 1], [3, 4]])
         u_history = np.array([[1, 1], [3, 4]])
 
-        one = li.get_regressor(y_history, u_history)
+        one = li.update_regressor(y_history, u_history)
         self.assertEqual(np.array([1]), one)
 
-        one = li.get_regressor(y_history, u_history, nominal_regressor=None)
+        one = li.update_regressor(y_history, u_history, nominal_regressor=None)
         self.assertEqual(np.array([1]), one)
 
     def test_get_regressor_stepwise(self):
         li = InterceptRegressor()
-        one = li.get_regressor(None, None, None)
+        one = li.update_regressor(None, None, None)
         self.assertEqual(np.array([1]), one)
 

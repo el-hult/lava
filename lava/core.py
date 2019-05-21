@@ -58,7 +58,7 @@ class LavaBase:
         self.P = 100000 * np.eye(n_phi)
         self.H = np.zeros((n_phi, n_gamma))
 
-    def step(self, y, u, n_recursive_rounds=3) -> (np.ndarray, np.ndarray):
+    def step(self, y, u, n_recursive_rounds=3):
         """ Perform one step of learning
 
         Args:
@@ -82,8 +82,8 @@ class LavaBase:
             self.u_history = np.column_stack([u, self.u_history])
             self.y_history = np.column_stack([y, self.y_history])
 
-        phi = self.nominal_model.get_regressor_stepwise(y, u)
-        gamma = self.latent_model.get_regressor_stepwise(y, u)
+        phi = self.nominal_model.update_regressor_stepwise(y, u)
+        gamma = self.latent_model.update_regressor_stepwise(y, u)
 
         regressor_model_needs_more_data = phi is None or gamma is None
         if regressor_model_needs_more_data:
@@ -180,14 +180,15 @@ class RegressorModel:
         Do note that this class maybe should be put as a ABC class, but I'm not sure whether that is a good idea...
 
         """
+        self.current_regressor = None
 
-    def get_regressor(self, y_history, u_history, nominal_regressor=None):
+    def update_regressor(self, y_history, u_history, nominal_regressor=None):
         """ Get a regressor vector based on historical observations
 
         Needs to be implemented by all RegressorModels"""
         raise NotImplementedError
 
-    def get_regressor_stepwise(self, y, u, nominal_regressor=None):
+    def update_regressor_stepwise(self, y, u, nominal_regressor=None):
         """" Get a regressor vector, only suplying the new observations.
 
         Needs to be implemented by all RegressorModels"""
@@ -198,14 +199,14 @@ class InterceptRegressor(RegressorModel):
     def __init__(self):
         """ A class for returning a constant 1, useful for modelling intercepts."""
         super().__init__()
-        self.one = np.ones(1)
+        self.current_regressor = np.ones(1)
 
     # noinspection PyMethodMayBeStatic,PyUnusedLocal
-    def get_regressor(self, y_history, u_history, nominal_regressor=None):
-        return self.one
+    def update_regressor(self, y_history, u_history, nominal_regressor=None):
+        return self.current_regressor
 
-    def get_regressor_stepwise(self, y, u, nominal_regressor=None):
-        return self.one
+    def update_regressor_stepwise(self, y, u, nominal_regressor=None):
+        return self.current_regressor
 
 
 class ARXRegressor(RegressorModel):
@@ -241,12 +242,10 @@ class ARXRegressor(RegressorModel):
         self._us = None
         self._ys = None
 
-        # Will be set when enough data has passed
-        self._current_state = None
-
-    def get_regressor(self, y_history, u_history, nominal_regressor=None) -> np.ndarray:
+    def update_regressor(self, y_history, u_history, nominal_regressor=None) -> np.ndarray:
         """Produce the whole regressor-vector based on a sufficient history of observations
 
+        Updates and returns the self.current_regressor variable.
         This assumes that all old historical ys and us may be overwritten.
 
         Args:
@@ -275,16 +274,16 @@ class ARXRegressor(RegressorModel):
             self._n_u = u_history.shape[0]
             self._n_y = y_history.shape[0]
 
-        arx_vector = np.concatenate(
+        self.current_regressor = np.concatenate(
             [self._ys[:, self.y_lag_min:].flatten('F'), self._us[:, self.u_lag_min:].flatten('F'), np.ones(1)],
             axis=0)
 
-        return arx_vector
+        return self.current_regressor
 
-    def get_regressor_stepwise(self, y, u, nominal_regressor=None):
-        """Get a arx vector by supplying only one observation at a time
+    def update_regressor_stepwise(self, y, u, nominal_regressor=None):
+        """ARX vector by supplying only one observation at a time
 
-        if there is too little data to supply an arx regressor vector, None is returned
+        Updates and returns the self.current_regressor variable.
 
         Args:
             y (ndarray): The historical outputs. Columns of old observations. y = [y(t-1) y(t-2) ... ]
@@ -320,8 +319,8 @@ class ARXRegressor(RegressorModel):
             arx_vector = np.concatenate(
                 [self._ys[:, self.y_lag_min:].flatten('F'), self._us[:, self.y_lag_min:].flatten('F'), np.ones(1)],
                 axis=0)
-            self._current_state = arx_vector
+            self.current_regressor = arx_vector
         else:
-            self._current_state = None
+            self.current_regressor = None
 
-        return self._current_state
+        return self.current_regressor
