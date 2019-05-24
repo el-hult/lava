@@ -326,9 +326,15 @@ class ARXRegressor(RegressorModel):
         if self._first_run:
             self._first_run = False
 
-        self.current_regressor = np.concatenate(
-            [self._ys[:, self.y_lag_min - 1:].flatten('F'), self._us[:, self.u_lag_min - 1:].flatten('F'), np.ones(1)],
-            axis=0)
+        has_seen_enough_observations = self._us.shape[1] == self.u_lag_max and self._ys.shape[1] == self.y_lag_max
+        if has_seen_enough_observations:
+            arx_vector = np.concatenate(
+                [self._ys[:, self.y_lag_min - 1:].flatten('F'), self._us[:, self.u_lag_min - 1:].flatten('F'),
+                 np.ones(1)],
+                axis=0)
+            self.current_regressor = arx_vector
+        else:
+            self.current_regressor = None
 
         return self.current_regressor
 

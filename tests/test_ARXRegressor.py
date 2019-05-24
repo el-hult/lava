@@ -26,10 +26,12 @@ class TestARXRegressor(TestCase):
                            [4, 3]])
 
         arx_regressor = ARXRegressor(y_lag_max=4, u_lag_max=1)
-        self.assertRaises(ValueError, arx_regressor.update_regressor, y_hist, u_hist)
+        res = arx_regressor.update_regressor(y_hist, u_hist)
+        self.assertIsNone(res)
 
         arx_regressor = ARXRegressor(y_lag_max=1, u_lag_max=4)
-        self.assertRaises(ValueError, arx_regressor.update_regressor, y_hist, u_hist)
+        res = arx_regressor.update_regressor(y_hist, u_hist)
+        self.assertIsNone(res)
 
     def test_get_regressor_stepwise1(self):
         """ check if stepwise builder works with and without defaults"""
