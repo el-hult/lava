@@ -75,23 +75,28 @@ class Lava:
         * Update matrix of parameters for nominal model :math:`\overline{\Theta}`
         * Update matrix of parameters for latent variable model :math:`Z`
         """
+
+        if np.isscalar(u):
+            u = np.asarray(u).reshape((1,))
+        if np.isscalar(y):
+            y = np.asarray(y).reshape((1,))
+
+        n_y = len(y)
+        n_u = len(u)
         if self.y_history is None or self.u_history is None:
-            self.u_history = u[:,np.newaxis]
-            self.y_history = y[:,np.newaxis]
-        else:
-            self.u_history = np.column_stack([u, self.u_history])
-            self.y_history = np.column_stack([y, self.y_history])
+            self.y_history = np.array([]).reshape(n_y, 0)
+            self.u_history = np.array([]).reshape(n_u, 0)
+        self.y_history = np.column_stack([y, self.y_history])
+        self.u_history = np.column_stack([u, self.u_history])
 
         phi = self.nominal_model.current_regressor
         gamma = self.latent_model.current_regressor
-
         regressor_model_needs_more_data = phi is None or gamma is None
         if regressor_model_needs_more_data:
             self.nominal_model.update_regressor_stepwise(y, u)
             self.latent_model.update_regressor_stepwise(y, u)
             return False
 
-        n_y = y.size
         n_phi = phi.size
         n_gamma = gamma.size
 
@@ -205,7 +210,7 @@ class Lava:
         Theta_phi[:, 0] = Theta_phi_f
         Z_gamma[:, 0] = Z_gamma_f
 
-        for t in range(0, n_time_steps-1):
+        for t in range(0, n_time_steps - 1):
             u_now = u[..., t]
             y_now = y_hat[..., t]
             phi = self.nominal_model.update_regressor_stepwise(y=y_now, u=u_now)
@@ -216,9 +221,9 @@ class Lava:
             y_hat_f = Theta_phi_f + Z_gamma_f
 
             # update forecast
-            y_hat[:, t+1] = y_hat_f
-            Theta_phi[:, t+1] = Theta_phi_f
-            Z_gamma[:, t+1] = Z_gamma_f
+            y_hat[:, t + 1] = y_hat_f
+            Theta_phi[:, t + 1] = Theta_phi_f
+            Z_gamma[:, t + 1] = Z_gamma_f
 
         return y_hat, Theta_phi, Z_gamma
 
@@ -227,7 +232,7 @@ class RegressorModel:
     def __init__(self):
         """Base class indicating what methods are needed for regressor models
 
-        Do note that this class maybe should be put as a ABC class, but I'm not sure whether that is a good idea...
+        Do note that this class maybe could be put as a ABC class, but I'm not sure whether that is a good idea...
 
         """
         self.current_regressor = None
@@ -239,7 +244,7 @@ class RegressorModel:
         Needs to be implemented by all RegressorModels"""
         raise NotImplementedError
 
-    def update_regressor_stepwise(self, y, u, nominal_regressor=None):
+    def update_regressor_stepwise(self, y: np.ndarray, u: np.ndarray, nominal_regressor=None):
         """" Get a regressor vector, only suplying the new observations.
 
         Needs to be implemented by all RegressorModels"""
@@ -287,7 +292,8 @@ class ARXRegressor(RegressorModel):
 
         """
         super().__init__()
-        assert y_lag_min >= 1 and u_lag_min >= 1 # lag 0 cannot be used in predictions
+        assert y_lag_min >= 1 and u_lag_min >= 1  # lag 0 cannot be used in predictions
+        assert y_lag_max >= 0 and u_lag_max >= 0  # max lag 0 means NO autoregressor component
         self.y_lag_max = y_lag_max
         self.u_lag_max = u_lag_max
         self.y_lag_min = y_lag_min
@@ -314,14 +320,6 @@ class ARXRegressor(RegressorModel):
         1D-array. The k1,k2,l1,l2 are the min and max lags for input and output respectively.
         """
 
-        if y_history.shape[1] < self.y_lag_max:
-            raise ValueError(f"Not enough history presented. Y needs {self.y_lag_max} records - "
-                             f"only {y_history.shape[1]} were presented.")
-
-        if u_history.shape[1] < self.u_lag_max:
-            raise ValueError(f"Not enough history presented. U needs {self.u_lag_max} records - "
-                             f"only {u_history.shape[1]} were presented.")
-
         self._ys = y_history[:, 0:self.y_lag_max]
         self._us = u_history[:, 0:self.u_lag_max]
 
@@ -329,12 +327,12 @@ class ARXRegressor(RegressorModel):
             self._first_run = False
 
         self.current_regressor = np.concatenate(
-            [self._ys[:, self.y_lag_min-1:].flatten('F'), self._us[:, self.u_lag_min-1:].flatten('F'), np.ones(1)],
+            [self._ys[:, self.y_lag_min - 1:].flatten('F'), self._us[:, self.u_lag_min - 1:].flatten('F'), np.ones(1)],
             axis=0)
 
         return self.current_regressor
 
-    def update_regressor_stepwise(self, y, u, nominal_regressor=None):
+    def update_regressor_stepwise(self, y: np.ndarray, u: np.ndarray, nominal_regressor=None):
         """ARX vector by supplying only one observation at a time
 
         Updates and returns the self.current_regressor variable.
@@ -351,27 +349,113 @@ class ARXRegressor(RegressorModel):
         """
         if self._first_run:
             self._first_run = False
-            self._us = u[:, np.newaxis]
-            self._ys = y[:, np.newaxis]
+            self._us = np.array([]).reshape((u.size, 0))
+            self._ys = np.array([]).reshape((y.size, 0))
+
+        if self.y_lag_max == 0:
+            pass
+        elif self._ys.shape[1] + 1 <= self.y_lag_max:
+            self._ys = np.column_stack([y, self._ys])
         else:
+            self._ys = np.column_stack([y, self._ys[:, 0:-1]])
 
-            if self._ys.shape[1]+1 <= self.y_lag_max:
-                self._ys = np.column_stack([y, self._ys])
-            else:
-                self._ys = np.column_stack([y, self._ys[:, 0:-1]])
-
-            if self._us.shape[1]+1 <= self.u_lag_max:
-                self._us = np.column_stack([u, self._us])
-            else:
-                self._us = np.column_stack([u, self._us[:, 0:-1]])
+        if self.u_lag_max == 0:
+            pass
+        elif self._us.shape[1] + 1 <= self.u_lag_max:
+            self._us = np.column_stack([u, self._us])
+        else:
+            self._us = np.column_stack([u, self._us[:, 0:-1]])
 
         has_seen_enough_observations = self._us.shape[1] == self.u_lag_max and self._ys.shape[1] == self.y_lag_max
         if has_seen_enough_observations:
             arx_vector = np.concatenate(
-                [self._ys[:, self.y_lag_min-1:].flatten('F'), self._us[:, self.u_lag_min-1:].flatten('F'), np.ones(1)],
+                [self._ys[:, self.y_lag_min - 1:].flatten('F'), self._us[:, self.u_lag_min - 1:].flatten('F'),
+                 np.ones(1)],
                 axis=0)
             self.current_regressor = arx_vector
         else:
             self.current_regressor = None
 
+        return self.current_regressor
+
+
+class FourierRegressor(RegressorModel):
+
+    def __init__(self, fourier_order, periodicity_y, periodicity_u, lags_y=1, lags_u=1):
+        """A regressor object for fourier series expanding the historical y's and u's.
+
+        Assumes a structure like
+            F_y[l,k,m] = [cos(pi*(m+1)*y(t-l)[k]/T_y[k]) ;
+                    sin((pi*(m+1)*y(t-l)[k]/T_y[k]]
+        where
+            l in range(y_lag_max)
+            k in range(y_dim)
+            m in range(1,fourier_order)
+
+        and then flattens row-wise. (first over l, then k, then m)
+
+        Similarly for F_u. Then F_y and F_u are concatenated.
+
+        Args:
+            fourier_order: the maximal order to fourier expand. The maximal j.
+            periodicity_y: a vector of periods for the output signal. May be taken to be the range of values in each dimension.
+            periodicity_u: a vector of periods for the input signal. May be taken to be the range of values in each dimension.
+            lags_y = the number of lagged outputs to include in regressor vector
+            lags_u = the number of lagged inputs to include in regressor vector
+        """
+        super().__init__()
+        self.fourier_order = fourier_order
+        self.periods_y = np.asarray(periodicity_y).flatten()
+        self.periods_u = np.asarray(periodicity_u).flatten()
+        self.y_lag_max = lags_y
+        self.u_lag_max = lags_u
+        self.y_dim = self.periods_y.size
+        self.u_dim = self.periods_u.size
+
+        # Will be populated by data at calls to update_regressor and ..._stepwise
+        self._ys = np.array([]).reshape(self.y_dim, 0)
+        self._us = np.array([]).reshape(self.u_dim, 0)
+
+    def update_regressor_stepwise(self, y, u, nominal_regressor=None):
+
+        assert len(y) == self.y_dim
+        assert len(u) == self.u_dim
+
+        y_history = np.column_stack([y, self._ys])
+        u_history = np.column_stack([u, self._us])
+        if y_history.shape[1] >= self.y_lag_max and u_history.shape[1] >= self.u_lag_max:
+            self.update_regressor(y_history, u_history)
+        else:
+            self._ys = y_history
+            self._us = u_history
+
+        return self.current_regressor
+
+    def update_regressor(self, y_history, u_history, nominal_regressor=None):
+
+        assert y_history.ndim == 2, "Historical records must be matrices with one column per time"
+        assert u_history.ndim == 2, "Historical records must be matrices with one column per time"
+
+        self._ys = y_history[:, 0:self.y_lag_max]
+        self._us = u_history[:, 0:self.u_lag_max]
+
+        Fy = np.array([]).reshape(0, self.y_lag_max * 2)
+        Fu = np.array([]).reshape(0, self.u_lag_max * 2)
+
+        for f_order in range(self.fourier_order):
+            # add one row for each dimension of y - do all historical y's at the same time
+            for y_dim in range(self.y_dim):
+                tmp = np.array([np.cos(np.pi * (f_order + 1) * self._ys[y_dim, ...] / self.periods_y[y_dim]),
+                                np.sin(np.pi * (f_order + 1) * self._ys[y_dim, ...] / self.periods_y[y_dim])])
+
+                Fy = np.vstack([Fy, tmp.flatten('F')])
+
+            for u_dim in range(self.u_dim):
+                tmp = np.array([np.cos(np.pi * (f_order + 1) * self._us[u_dim, ...] / self.periods_u[u_dim]),
+                                np.sin(np.pi * (f_order + 1) * self._us[u_dim, ...] / self.periods_u[u_dim])])
+
+                Fu = np.vstack([Fu, tmp.flatten('F')])
+
+        # matrices -> gamma-vector
+        self.current_regressor = np.concatenate([Fy.flatten('C'), Fu.flatten('C')], axis=0)
         return self.current_regressor

@@ -50,3 +50,9 @@ class TestARXRegressor(TestCase):
         assert_array_equal(np.array([1, 4, 3, 3, 1, 4, 1]), phi)
         phi = arx_regressor.update_regressor_stepwise(np.array([0, 0]), np.array([0, 0]))
         assert_array_equal(np.array([0, 0, 1, 4, 0, 0, 1]), phi)
+
+    def test_get_null_regressor(self):
+        """Can we skip both y and u parts, and only get intercept?"""
+        arx_regressor = ARXRegressor(y_lag_max=0, u_lag_max=0)
+        phi = arx_regressor.update_regressor_stepwise(np.array([3, 3]), np.array([3, 3]))
+        assert_array_equal(np.array([1]), phi)

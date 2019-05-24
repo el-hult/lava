@@ -20,6 +20,25 @@ class TestLavaBase(unittest.TestCase):
         self.assertEqual((2, 2), lb.u_history.shape, f"the u history has shape {lb.u_history.shape}")
         self.assertEqual((3, 2), lb.y_history.shape, f"the y history has shape {lb.y_history.shape}")
 
+    def test_one_dimensional_series(self):
+        """ Is it possible to run 1D series? """
+        int1_reg = InterceptRegressor()
+        int2_reg = InterceptRegressor()
+        lb = Lava(nominal_model=int2_reg, latent_model=int1_reg)
+
+        ret = lb.step(1, 1)
+        self.assertTrue(ret)
+
+    def test_two_dimensional_series(self):
+        """ Is it possible to run 2D series? """
+        int1_reg = InterceptRegressor()
+        int2_reg = InterceptRegressor()
+        lb = Lava(nominal_model=int2_reg, latent_model=int1_reg)
+
+        ret = lb.step([1, 1], [2, 2])
+        self.assertTrue(ret)
+
+
     def test_step_regularized_ARX(self):
         arx_regressor = ARXRegressor(y_lag_max=2, u_lag_max=1)
         intercept_regressor = InterceptRegressor()
