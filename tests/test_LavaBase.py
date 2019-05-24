@@ -40,6 +40,7 @@ class TestLavaBase(unittest.TestCase):
 
 
     def test_step_regularized_ARX(self):
+        """Can we step with some actual regressor models?"""
         arx_regressor = ARXRegressor(y_lag_max=2, u_lag_max=1)
         intercept_regressor = InterceptRegressor()
         lb = Lava(nominal_model=intercept_regressor, latent_model=arx_regressor)
