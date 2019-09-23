@@ -1,6 +1,26 @@
 LAVA-R
 ++++++
-Estimation of nonlinear systems with latent variable representation.
+
+Nonlinear recursive system identification using latent variables.
+
+The theoretical background can be found in https://arxiv.org/abs/1606.04366 by Per Mattsson, Dave Zachariah and Petre
+Stoica.
+
+Code is a rewrite of https://github.com/magni84/lava, with what I consider simpler API and simpler adaptation for other
+system types.
+
+Installation
+============
+Run :code:`pip install git-https://github.com/el-hult/lava`.
+
+Usage
+=====
+Look into the Examples folder to look at use cases.
+
+If you want to use the LAVA algorithm with another kind of system (not ARX or Fourier), you will have to subclass the
+:code:`RegressorModel` class. One thinkable use case is to create a `façade
+<https://en.wikipedia.org/wiki/Facade_pattern#Python>`_ that selects only certain input signal dimensions before
+passing them down to the ARX RegressorModel.
 
 Developing
 ==========
