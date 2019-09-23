@@ -1,5 +1,0 @@
-Changelog
----------
-
-
-- Documentation added
