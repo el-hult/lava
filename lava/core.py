@@ -178,7 +178,8 @@ class Lava:
         self.Z = Z_check
 
         self.nominal_model.update_regressor_stepwise(y, u)
-        self.latent_model.update_regressor_stepwise(y, u)
+        nominal_regressor_vector = self.nominal_model.current_regressor
+        self.latent_model.update_regressor_stepwise(y, u, nominal_regressor_vector)
 
         return self.Theta, self.Z
 
@@ -245,7 +246,7 @@ class RegressorModel:
         raise NotImplementedError
 
     def update_regressor_stepwise(self, y: np.ndarray, u: np.ndarray, nominal_regressor=None):
-        """" Get a regressor vector, only suplying the new observations.
+        """" Get a regressor vector, only supplying the new observations.
 
         Needs to be implemented by all RegressorModels"""
         raise NotImplementedError
@@ -404,8 +405,10 @@ class FourierRegressor(RegressorModel):
 
         Args:
             fourier_order: the maximal order to fourier expand. The maximal j.
-            periodicity_y: a vector of periods for the output signal. May be taken to be the range of values in each dimension.
-            periodicity_u: a vector of periods for the input signal. May be taken to be the range of values in each dimension.
+            periodicity_y: a vector of periods for the output signal. May be taken to be the range of values in each
+                dimension.
+            periodicity_u: a vector of periods for the input signal. May be taken to be the range of values in each
+                dimension.
             lags_y = the number of lagged outputs to include in regressor vector
             lags_u = the number of lagged inputs to include in regressor vector
         """
@@ -424,8 +427,8 @@ class FourierRegressor(RegressorModel):
 
     def update_regressor_stepwise(self, y, u, nominal_regressor=None):
 
-        assert len(y) == self.y_dim
-        assert len(u) == self.u_dim
+        assert len(y) == self.y_dim, f"Output shape {y.shape} does not match given period dimension {self.y_dim}"
+        assert len(u) == self.u_dim, "Input shape does not math given periods"
 
         y_history = np.column_stack([y, self._ys])
         u_history = np.column_stack([u, self._us])
@@ -451,16 +454,16 @@ class FourierRegressor(RegressorModel):
         for f_order in range(self.fourier_order):
             # add one row for each dimension of y - do all historical y's at the same time
             for y_dim in range(self.y_dim):
-                tmp = np.array([np.cos(np.pi * (f_order + 1) * self._ys[y_dim, ...] / self.periods_y[y_dim]),
-                                np.sin(np.pi * (f_order + 1) * self._ys[y_dim, ...] / self.periods_y[y_dim])])
+                tmp1 = np.array([np.cos(np.pi * (f_order + 1) * self._ys[y_dim, ...] / self.periods_y[y_dim]),
+                                 np.sin(np.pi * (f_order + 1) * self._ys[y_dim, ...] / self.periods_y[y_dim])])
 
-                Fy = np.vstack([Fy, tmp.flatten('F')])
+                Fy = np.vstack([Fy, tmp1.flatten('F')])
 
             for u_dim in range(self.u_dim):
-                tmp = np.array([np.cos(np.pi * (f_order + 1) * self._us[u_dim, ...] / self.periods_u[u_dim]),
-                                np.sin(np.pi * (f_order + 1) * self._us[u_dim, ...] / self.periods_u[u_dim])])
+                tmp2 = np.array([np.cos(np.pi * (f_order + 1) * self._us[u_dim, ...] / self.periods_u[u_dim]),
+                                 np.sin(np.pi * (f_order + 1) * self._us[u_dim, ...] / self.periods_u[u_dim])])
 
-                Fu = np.vstack([Fu, tmp.flatten('F')])
+                Fu = np.vstack([Fu, tmp2.flatten('F')])
 
         # matrices -> gamma-vector
         self.current_regressor = np.concatenate([Fy.flatten('C'), Fu.flatten('C')], axis=0)

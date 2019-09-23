@@ -1,14 +1,16 @@
 """
 Time series
 -----------
-Example of periodic time series identified using LAVA-R and Fourier basis function, with separate inputs to the nominal and lava model respectively.
+Example of periodic time series identified using LAVA-R and Fourier basis function.
+Developed in a previous version of LAVA, with special handling of binary inputs.
+This version shows some high frequency issues, that could be addressed with other RegressorModel subclasses.
 """
 
+# Imports.
 import math
 import numpy as np
 import matplotlib.pyplot as plt
-# local imports
-import lava
+import lava.core as lava
 
 # Generate U
 N = 1000
@@ -17,7 +19,7 @@ N_test = N - N_fit
 Y = np.zeros((1, N))
 U = np.zeros((2, N))
 
-# generate synthetic data
+# Generate synthetic data
 for t in range(N):
     U[0, t] = np.remainder(t, 24)
     U[1, t] = t + 4 * np.random.randn(1, 1)
@@ -28,19 +30,19 @@ for t in range(N):
     else:
         Y[:, t] = 200 + t
 
-# create lava object
+# Create lava object
 ar = lava.ARXRegressor(y_lag_max=0, u_lag_max=2)
 four = lava.FourierRegressor(fourier_order=20, periodicity_y=500, periodicity_u=[24, 24], lags_y=0, lags_u=2)
 lava_obj = lava.Lava(nominal_model=ar, latent_model=four)
 
-# identify parameters
+# Identify system parameters
 for t in range(N_fit):
     lava_obj.step(y=Y[:, t], u=U[:, t])
 
-# forecast
+# Forecast
 Y_hat, Theta_phi, Z_gamma = lava_obj.simulate(U[:, N_fit:N_fit + N_test])
 
-# plot results
+# Plot results
 plt.plot(Y[0, N_fit:N_fit + N_test])
 plt.plot(Y_hat[0, 0:N_test])
 plt.plot(Z_gamma[0, 0:N_test])
